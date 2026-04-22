@@ -1,0 +1,15 @@
+data_path: data/processed/cdc_events.csv
+target: priority_label
+categorical_columns:
+  - event_type
+  - table_name
+  - business_domain
+numeric_columns:
+  - record_size
+  - estimated_sync_cost
+  - dependency_count
+  - queue_wait_time
+split:
+  train: 0.7
+  valid: 0.15
+  test: 0.15

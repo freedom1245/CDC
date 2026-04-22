@@ -1,0 +1,14 @@
+dataset_config: configs/dataset.yaml
+classifier_output_dir: outputs/classifier
+algorithm: dqn
+episode_count: 200
+max_steps_per_episode: 500
+queue_capacity: 10000
+service_rate: 128
+starvation_threshold: 50
+reward_weights:
+  high_priority_throughput: 1.0
+  average_delay_penalty: 0.1
+  starvation_penalty: 1.0
+  deadline_miss_penalty: 1.5
+output_dir: outputs/scheduler

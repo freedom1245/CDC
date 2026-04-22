@@ -1,11 +1,13 @@
 # Python bytecode and caches
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 
 # Build and packaging artifacts
 build/
 dist/
+site/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
@@ -16,13 +18,14 @@ venv/
 env/
 ENV/
 
-# Tool caches
+# Tool caches and test artifacts
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 .coverage.*
 htmlcov/
+.hypothesis/
 
 # IDE/editor settings
 .vscode/
@@ -36,9 +39,28 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Project-specific training outputs and artifacts
+# Local datasets and generated data
+data/raw/*
+data/processed/*
+data/reports/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/reports/.gitkeep
+thesios_cluster1_16TB_20240115_data-00000-of-00100
+*.csv
+*.parquet
+
+# Training outputs, checkpoints, and reports
+outputs/classifier/*
+outputs/scheduler/*
+outputs/figures/*
+!outputs/classifier/.gitkeep
+!outputs/scheduler/.gitkeep
+!outputs/figures/.gitkeep
 *.pt
 *.pth
 *.ckpt
 *_report.json
-thesios_cluster1_16TB_20240115_data-00000-of-00100
+
+# Notebook checkpoints
+.ipynb_checkpoints/
