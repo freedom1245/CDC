@@ -5,6 +5,8 @@ classification and reinforcement-learning-based synchronization scheduling.
 
 ## Entry Points
 
+- `python build_dataset.py`
+- `python build_scheduler_dataset.py`
 - `python train_classifier.py`
 - `python train_scheduler.py`
 - `python run_pipeline.py`

@@ -46,7 +46,6 @@ data/reports/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/reports/.gitkeep
-thesios_cluster1_16TB_20240115_data-00000-of-00100
 *.csv
 *.parquet
 
@@ -64,3 +63,8 @@ outputs/figures/*
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+
+thesios_classifier/
+train_thesios_classifier.py
+
+

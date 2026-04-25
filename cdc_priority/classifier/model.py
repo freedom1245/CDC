@@ -17,7 +17,17 @@ class MLPClassifier(nn.Module):
             nn.Linear(hidden_dim, num_classes),
         )
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        categorical_inputs: torch.Tensor,
+        numeric_inputs: torch.Tensor,
+    ) -> torch.Tensor:
+        if categorical_inputs.numel() == 0:
+            inputs = numeric_inputs
+        elif numeric_inputs.numel() == 0:
+            inputs = categorical_inputs.float()
+        else:
+            inputs = torch.cat([categorical_inputs.float(), numeric_inputs], dim=1)
         return self.network(inputs)
 
 

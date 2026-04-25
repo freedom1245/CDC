@@ -1,15 +1,50 @@
-data_path: data/processed/cdc_events.csv
+data_path: data/processed/cdc_events_200k_from_oct2019.csv
 target: priority_label
 categorical_columns:
   - event_type
   - table_name
   - business_domain
+  - source_service
+  - user_level
 numeric_columns:
   - record_size
+  - changed_columns_count
   - estimated_sync_cost
+  - business_value
+  - consistency_risk
   - dependency_count
   - queue_wait_time
+  - deadline
+  - retry_count
+  - source_load
+  - db_load
+  - is_peak_hour
+  - is_hot_data
 split:
   train: 0.7
   valid: 0.15
   test: 0.15
+labeling:
+  priority_score:
+    numeric_weights:
+      business_value: 0.45
+      queue_wait_time: 0.18
+      dependency_count: 0.10
+      estimated_sync_cost: 0.05
+      retry_count: 0.07
+    invert_numeric:
+      - estimated_sync_cost
+    categorical_weights:
+      event_type: 0.10
+      business_domain: 0.05
+    hot_values:
+      event_type:
+        - PURCHASE
+        - CART
+      business_domain:
+        - ELECTRONICS
+        - COMPUTERS
+        - APPLIANCES
+    thresholds:
+      medium: 0.34
+      high: 0.50

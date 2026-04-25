@@ -1,11 +1,7 @@
-source: thesios_legacy
-data_path: thesios_cluster1_16TB_20240115_data-00000-of-00100
-target: priority_label
-max_rows: 0
-top_apps: 64
-test_size: 0.2
-model_variant: v2
-batch_size: 2048
+source: configured_dataset
+dataset_config: configs/dataset.yaml
+model_variant: mlp
+batch_size: 512
 epochs: 20
 lr: 0.001
 weight_decay: 0.0001
