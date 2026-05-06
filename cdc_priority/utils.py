@@ -28,3 +28,14 @@ def resolve_run_output_dir(
     resolved_run_name = sanitize_run_name(run_name) if run_name else generate_run_name(prefix)
     output_dir = ensure_directory(base_dir / resolved_run_name)
     return output_dir, resolved_run_name
+
+
+def to_project_relative_path(path: Path, project_root: Path) -> str:
+    if not path.is_absolute():
+        normalized = path
+    else:
+        try:
+            normalized = path.relative_to(project_root)
+        except ValueError:
+            return path.as_posix()
+    return normalized.as_posix()

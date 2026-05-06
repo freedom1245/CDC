@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from ..data.dataset_builder import build_dataset_from_config
 from ..settings import default_settings, load_yaml_config
-from ..utils import ensure_directory, resolve_run_output_dir
+from ..utils import ensure_directory, resolve_run_output_dir, to_project_relative_path
 from .baselines import evaluate_baseline_models
 from .evaluate import (
     build_classification_metrics,
@@ -189,6 +189,7 @@ def _train_prepared_dataset(
     run_label: str = "configured_dataset",
     save_artifacts: bool = True,
 ) -> dict[str, object]:
+    project_root = default_settings().project_root
     encoded = encode_dataset(prepared)
 
     train_dataset = EncodedTensorDataset(
@@ -343,7 +344,7 @@ def _train_prepared_dataset(
         "attention_heads": int(config_values.get("attention_heads", 8)),
         "attention_layers": int(config_values.get("attention_layers", 2)),
         "run_name": output_dir.name,
-        "output_dir": str(output_dir),
+        "output_dir": to_project_relative_path(output_dir, project_root),
         "learning_rate": float(config_values.get("lr", config_values.get("learning_rate", 1e-3))),
         "weight_decay": float(config_values.get("weight_decay", 1e-4)),
         "validation": {

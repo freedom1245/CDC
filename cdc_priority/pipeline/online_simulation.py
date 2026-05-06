@@ -10,7 +10,7 @@ from ..data.dataset_builder import (
 )
 from ..scheduler.training import run_scheduler_training
 from ..settings import default_settings, load_yaml_config
-from ..utils import generate_run_name, resolve_run_output_dir
+from ..utils import generate_run_name, resolve_run_output_dir, to_project_relative_path
 
 
 def _resolve_project_path(project_root: Path, raw_path: str | Path) -> Path:
@@ -107,16 +107,37 @@ def run_pipeline(
     scheduler_report = _read_json(scheduler_output_dir / "scheduler_report.json")
 
     pipeline_report = {
-        "classifier_config": str(classifier_config),
-        "scheduler_config": str(scheduler_config),
-        "classifier_dataset_config": str(classifier_dataset_config),
-        "scheduler_dataset_config": str(scheduler_dataset_config),
+        "classifier_config": to_project_relative_path(classifier_config, settings.project_root),
+        "scheduler_config": to_project_relative_path(scheduler_config, settings.project_root),
+        "classifier_dataset_config": to_project_relative_path(
+            classifier_dataset_config,
+            settings.project_root,
+        ),
+        "scheduler_dataset_config": to_project_relative_path(
+            scheduler_dataset_config,
+            settings.project_root,
+        ),
         "paths": {
-            "classifier_dataset_output_dir": str(classifier_dataset_output_dir),
-            "scheduler_dataset_output_dir": str(scheduler_dataset_output_dir),
-            "classifier_output_dir": str(classifier_output_dir),
-            "scheduler_output_dir": str(scheduler_output_dir),
-            "pipeline_output_dir": str(pipeline_output_dir),
+            "classifier_dataset_output_dir": to_project_relative_path(
+                classifier_dataset_output_dir,
+                settings.project_root,
+            ),
+            "scheduler_dataset_output_dir": to_project_relative_path(
+                scheduler_dataset_output_dir,
+                settings.project_root,
+            ),
+            "classifier_output_dir": to_project_relative_path(
+                classifier_output_dir,
+                settings.project_root,
+            ),
+            "scheduler_output_dir": to_project_relative_path(
+                scheduler_output_dir,
+                settings.project_root,
+            ),
+            "pipeline_output_dir": to_project_relative_path(
+                pipeline_output_dir,
+                settings.project_root,
+            ),
         },
         "run_name": shared_run_name,
         "classifier_dataset_report": classifier_prepared.report,

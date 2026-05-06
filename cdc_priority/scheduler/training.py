@@ -5,7 +5,7 @@ import random
 import torch
 
 from ..settings import default_settings, load_yaml_config
-from ..utils import ensure_directory, resolve_run_output_dir
+from ..utils import ensure_directory, resolve_run_output_dir, to_project_relative_path
 from .agent import DQNAgent, DoubleDQNAgent, PPOAgent
 from .env import SchedulerEnv
 from .evaluate import (
@@ -593,7 +593,7 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
             {
                 "algorithm": algorithm,
                 "run_name": resolved_run_name,
-                "output_dir": str(output_dir),
+                "output_dir": to_project_relative_path(output_dir, settings.project_root),
                 "best_validation_reward": best_reward,
                 "best_validation_summary": best_validation_summary,
                 "history": history,

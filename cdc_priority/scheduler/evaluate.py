@@ -9,6 +9,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from ..settings import default_settings
+from ..utils import to_project_relative_path
 from .env import SchedulerEnv
 from .event import CDCEvent
 
@@ -195,9 +197,10 @@ def _is_comparison_cache_valid(
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
+    project_root = default_settings().project_root
     return (
         metadata.get("cache_version") == COMPARISON_CACHE_VERSION
-        and metadata.get("data_path") == str(data_path.resolve())
+        and metadata.get("data_path") == to_project_relative_path(data_path.resolve(), project_root)
         and metadata.get("starvation_threshold") == starvation_threshold
         and metadata.get("env_kwargs") == (env_kwargs or {})
         and metadata.get("data_mtime_ns") == data_path.stat().st_mtime_ns
@@ -211,9 +214,10 @@ def _write_comparison_cache_metadata(
     env_kwargs: dict[str, object] | None = None,
 ) -> None:
     metadata_path = _cache_metadata_path(output_path)
+    project_root = default_settings().project_root
     metadata = {
         "cache_version": COMPARISON_CACHE_VERSION,
-        "data_path": str(data_path.resolve()),
+        "data_path": to_project_relative_path(data_path.resolve(), project_root),
         "starvation_threshold": starvation_threshold,
         "env_kwargs": env_kwargs or {},
         "data_mtime_ns": data_path.stat().st_mtime_ns,
