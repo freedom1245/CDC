@@ -169,6 +169,103 @@ def test_attach_priority_label_supports_component_scoring() -> None:
     assert labeled.loc[2, "priority_label"] == "low"
 
 
+def test_attach_priority_label_supports_impact_score_quantiles() -> None:
+    frame = pd.DataFrame(
+        {
+            "event_type": ["purchase", "cart", "view", "view"],
+            "table_name": ["orders", "payments", "archive", "archive"],
+            "source_service": ["svc-a", "svc-b", "svc-c", "svc-d"],
+            "business_domain": ["electronics", "computers", "archive", "archive"],
+            "user_level": ["vip", "internal", "normal", "guest"],
+            "business_value": [100, 80, 20, 5],
+            "queue_wait_time": [9, 8, 2, 0],
+            "estimated_sync_cost": [2, 3, 3, 1],
+            "deadline": [5, 6, 20, 30],
+            "retry_count": [1, 0, 0, 0],
+            "is_peak_hour": [1, 1, 0, 0],
+            "source_load": [0.9, 0.8, 0.2, 0.1],
+            "db_load": [0.8, 0.7, 0.2, 0.1],
+            "consistency_risk": [0.9, 0.8, 0.2, 0.1],
+            "dependency_count": [5, 4, 1, 0],
+        }
+    )
+
+    labeled = attach_priority_label(
+        frame,
+        labeling_config={
+            "impact_score": {
+                "components": {
+                    "deadline_miss_impact": {
+                        "weight": 0.35,
+                        "mode": "deadline_risk",
+                    },
+                    "delay_cost_impact": {
+                        "weight": 0.25,
+                        "mode": "delay_cost",
+                    },
+                    "consistency_impact": {
+                        "weight": 0.20,
+                        "mode": "consistency_risk",
+                        "numeric_weights": {
+                            "consistency_risk": 0.45,
+                            "dependency_count": 0.35,
+                        },
+                        "categorical_weights": {
+                            "event_type": 0.10,
+                            "table_name": 0.05,
+                            "source_service": 0.05,
+                        },
+                        "hot_values": {
+                            "event_type": ["purchase", "cart"],
+                            "table_name": ["orders", "payments"],
+                        },
+                        "interactions": [
+                            {
+                                "columns": ["event_type", "table_name"],
+                                "hot_values": {
+                                    "event_type": ["purchase", "cart"],
+                                    "table_name": ["orders", "payments"],
+                                },
+                                "weight": 0.15,
+                            }
+                        ],
+                    },
+                    "starvation_externality": {
+                        "weight": 0.10,
+                        "mode": "fairness_cost",
+                        "hot_values": {
+                            "business_domain": ["archive"],
+                            "user_level": ["normal", "guest"],
+                        },
+                    },
+                    "throughput_value": {
+                        "weight": 0.10,
+                        "mode": "business_value",
+                        "numeric_weights": {"business_value": 0.7},
+                        "categorical_weights": {
+                            "user_level": 0.2,
+                            "business_domain": 0.1,
+                        },
+                        "hot_values": {
+                            "user_level": ["vip", "internal"],
+                            "business_domain": ["electronics", "computers"],
+                        },
+                    },
+                },
+                "thresholds": {
+                    "strategy": "quantile",
+                    "low_high_quantiles": [0.33, 0.66],
+                },
+            }
+        },
+    )
+
+    assert "priority_score" in labeled.columns
+    assert labeled.loc[0, "priority_label"] == "high"
+    assert labeled.loc[3, "priority_label"] == "low"
+    assert set(labeled["priority_label"]) == {"high", "medium", "low"}
+
+
 def test_encode_dataset_produces_train_valid_test_tensors() -> None:
     frame = pd.DataFrame(
         {

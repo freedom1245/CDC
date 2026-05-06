@@ -25,59 +25,85 @@ split:
   valid: 0.15
   test: 0.15
 labeling:
-  priority_score:
+  impact_score:
     components:
-      business_importance:
-        weight: 0.40
-        numeric_weights:
-          business_value: 0.75
-        categorical_weights:
-          business_domain: 0.15
-          user_level: 0.10
-        invert_numeric: []
-        hot_values:
-          business_domain:
-            - ELECTRONICS
-            - COMPUTERS
-            - APPLIANCES
-          user_level:
-            - VIP
-            - INTERNAL
-      timeliness:
-        weight: 0.30
-        numeric_weights:
-          queue_wait_time: 0.45
-          deadline_gap: 0.35
-          retry_count: 0.10
-          is_peak_hour: 0.10
-        invert_numeric:
-          - deadline_gap
-        categorical_weights: {}
-        hot_values: {}
-      dependency_impact:
+      deadline_miss_impact:
+        weight: 0.35
+        mode: deadline_risk
+        params:
+          pressure_threshold: 0.85
+          sigmoid_scale: 6.0
+          retry_boost: 0.25
+          peak_hour_boost: 0.10
+          load_boost: 0.20
+      delay_cost_impact:
+        weight: 0.25
+        mode: delay_cost
+        params:
+          delay_threshold: 0.45
+          delay_scale: 5.0
+          business_value_boost: 0.30
+      consistency_impact:
         weight: 0.20
+        mode: consistency_risk
         numeric_weights:
-          dependency_count: 0.60
-          consistency_risk: 0.40
+          consistency_risk: 0.45
+          dependency_count: 0.35
         categorical_weights:
-          event_type: 1.0
-        invert_numeric: []
+          event_type: 0.10
+          table_name: 0.05
+          source_service: 0.05
         hot_values:
           event_type:
             - PURCHASE
             - CART
-      execution_feasibility:
+          table_name:
+            - ORDERS
+            - PAYMENTS
+            - INVENTORY
+        interactions:
+          - columns:
+              - event_type
+              - table_name
+            hot_values:
+              event_type:
+                - PURCHASE
+                - CART
+              table_name:
+                - ORDERS
+                - PAYMENTS
+            weight: 0.15
+      starvation_externality:
         weight: 0.10
+        mode: fairness_cost
+        hot_values:
+          business_domain:
+            - ARCHIVE
+            - ANALYTICS
+          user_level:
+            - NORMAL
+            - GUEST
+        params:
+          low_priority_boost: 0.50
+          peak_hour_boost: 0.20
+      throughput_value:
+        weight: 0.10
+        mode: business_value
         numeric_weights:
-          estimated_sync_cost: 0.70
-          source_load: 0.15
-          db_load: 0.15
-        invert_numeric:
-          - estimated_sync_cost
-          - source_load
-          - db_load
-        categorical_weights: {}
-        hot_values: {}
+          business_value: 0.70
+        categorical_weights:
+          user_level: 0.20
+          business_domain: 0.10
+        hot_values:
+          user_level:
+            - VIP
+            - INTERNAL
+          business_domain:
+            - ELECTRONICS
+            - COMPUTERS
+            - APPLIANCES
     thresholds:
-      medium: 0.34
-      high: 0.50
+      strategy: quantile
+      low_high_quantiles:
+        - 0.33
+        - 0.66
