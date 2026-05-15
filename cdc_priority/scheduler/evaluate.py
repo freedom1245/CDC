@@ -15,7 +15,7 @@ from .env import SchedulerEnv
 from .event import CDCEvent
 
 ARRIVAL_STEP_TIME_UNIT_SECONDS = 1.0
-COMPARISON_CACHE_VERSION = 3
+COMPARISON_CACHE_VERSION = 6
 
 
 @dataclass
@@ -26,9 +26,19 @@ class SchedulerMetrics:
     completed_events: int
     high_priority_average_delay_steps: float
     fairness_index: float
+    high_priority_match_rate: float
+    matched_high_priority_count: int
+    expected_high_priority_count: int
+    evaluated_priority_window_size: int
+    timely_high_priority_match_rate: float
+    timely_matched_high_priority_count: int
+    timely_match_window_steps: int
 
 
-def _build_arrival_steps(frame: pd.DataFrame) -> list[int]:
+def _build_arrival_steps(
+    frame: pd.DataFrame,
+    arrival_step_time_unit_seconds: float = ARRIVAL_STEP_TIME_UNIT_SECONDS,
+) -> list[int]:
     if "timestamp" not in frame.columns:
         return list(range(len(frame)))
 
@@ -38,8 +48,9 @@ def _build_arrival_steps(frame: pd.DataFrame) -> list[int]:
 
     base_timestamp = parsed_timestamps.iloc[0]
     delta_seconds = (parsed_timestamps - base_timestamp).dt.total_seconds()
+    unit_seconds = max(float(arrival_step_time_unit_seconds), 1e-6)
     return (
-        (delta_seconds / ARRIVAL_STEP_TIME_UNIT_SECONDS)
+        (delta_seconds / unit_seconds)
         .round()
         .clip(lower=0)
         .astype(int)
@@ -47,13 +58,19 @@ def _build_arrival_steps(frame: pd.DataFrame) -> list[int]:
     )
 
 
-def load_scheduler_events(data_path: Path) -> list[CDCEvent]:
+def load_scheduler_events(
+    data_path: Path,
+    arrival_step_time_unit_seconds: float = ARRIVAL_STEP_TIME_UNIT_SECONDS,
+) -> list[CDCEvent]:
     frame = pd.read_csv(data_path)
     if "timestamp" in frame.columns:
         frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
         frame = frame.sort_values("timestamp", kind="stable").reset_index(drop=True)
 
-    arrival_steps = _build_arrival_steps(frame)
+    arrival_steps = _build_arrival_steps(
+        frame,
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
+    )
 
     events: list[CDCEvent] = []
     for index, row in frame.iterrows():
@@ -98,11 +115,65 @@ def _jain_fairness(values: list[float]) -> float:
     return 0.0 if denominator <= 1e-12 else numerator / denominator
 
 
+def _high_priority_match_summary(
+    events: list[CDCEvent],
+    processed_event_ids: list[str],
+) -> dict[str, float | int]:
+    expected_high_ids = {event.event_id for event in events if event.priority == "high"}
+    expected_high_count = len(expected_high_ids)
+    if expected_high_count <= 0:
+        return {
+            "high_priority_match_rate": 1.0,
+            "matched_high_priority_count": 0,
+            "expected_high_priority_count": 0,
+            "evaluated_priority_window_size": 0,
+        }
+
+    priority_window = processed_event_ids[:expected_high_count]
+    matched_high_priority_count = sum(
+        1 for event_id in priority_window if event_id in expected_high_ids
+    )
+    return {
+        "high_priority_match_rate": matched_high_priority_count / expected_high_count,
+        "matched_high_priority_count": matched_high_priority_count,
+        "expected_high_priority_count": expected_high_count,
+        "evaluated_priority_window_size": len(priority_window),
+    }
+
+
+def _timely_high_priority_match_summary(
+    events: list[CDCEvent],
+    processed_high_delays: dict[str, int],
+    timely_match_window_steps: int,
+) -> dict[str, float | int]:
+    expected_high_ids = {event.event_id for event in events if event.priority == "high"}
+    expected_high_count = len(expected_high_ids)
+    if expected_high_count <= 0:
+        return {
+            "timely_high_priority_match_rate": 1.0,
+            "timely_matched_high_priority_count": 0,
+            "timely_match_window_steps": timely_match_window_steps,
+        }
+
+    timely_matched_high_priority_count = sum(
+        1
+        for event_id in expected_high_ids
+        if processed_high_delays.get(event_id, timely_match_window_steps + 1)
+        <= timely_match_window_steps
+    )
+    return {
+        "timely_high_priority_match_rate": timely_matched_high_priority_count / expected_high_count,
+        "timely_matched_high_priority_count": timely_matched_high_priority_count,
+        "timely_match_window_steps": timely_match_window_steps,
+    }
+
+
 def simulate_policy(
     events: list[CDCEvent],
     policy_name: str,
     starvation_threshold: int = 5,
     env_kwargs: dict[str, object] | None = None,
+    timely_match_window_steps: int = 10,
 ) -> SchedulerMetrics:
     merged_env_kwargs = {"starvation_threshold": starvation_threshold}
     if env_kwargs:
@@ -116,6 +187,8 @@ def simulate_policy(
     delay_totals: list[int] = []
     high_delay_totals: list[int] = []
     per_priority_delay: dict[str, list[int]] = {"high": [], "medium": [], "low": []}
+    processed_event_ids: list[str] = []
+    processed_high_delays: dict[str, int] = {}
 
     evaluation_budget = max(len(events) * 50, 10000)
     for _ in range(evaluation_budget):
@@ -126,6 +199,12 @@ def simulate_policy(
             delay = int(info.get("processed_delay_steps", 0))
             delay_totals.append(delay)
             per_priority_delay[priority].append(delay)
+            processed_event_id = info.get("processed_event_id")
+            if processed_event_id is not None:
+                processed_event_id = str(processed_event_id)
+                processed_event_ids.append(processed_event_id)
+                if priority == "high":
+                    processed_high_delays[processed_event_id] = delay
             if priority == "high":
                 high_delay_totals.append(delay)
             completed += 1
@@ -143,6 +222,12 @@ def simulate_policy(
         ]
     )
     throughput = completed / max(env.current_step, 1)
+    match_summary = _high_priority_match_summary(events, processed_event_ids)
+    timely_match_summary = _timely_high_priority_match_summary(
+        events,
+        processed_high_delays,
+        timely_match_window_steps=timely_match_window_steps,
+    )
     return SchedulerMetrics(
         throughput=throughput,
         average_delay_steps=average_delay_steps,
@@ -150,6 +235,17 @@ def simulate_policy(
         completed_events=completed,
         high_priority_average_delay_steps=high_average_delay_steps,
         fairness_index=fairness_index,
+        high_priority_match_rate=float(match_summary["high_priority_match_rate"]),
+        matched_high_priority_count=int(match_summary["matched_high_priority_count"]),
+        expected_high_priority_count=int(match_summary["expected_high_priority_count"]),
+        evaluated_priority_window_size=int(match_summary["evaluated_priority_window_size"]),
+        timely_high_priority_match_rate=float(
+            timely_match_summary["timely_high_priority_match_rate"]
+        ),
+        timely_matched_high_priority_count=int(
+            timely_match_summary["timely_matched_high_priority_count"]
+        ),
+        timely_match_window_steps=int(timely_match_summary["timely_match_window_steps"]),
     )
 
 
@@ -157,6 +253,7 @@ def compare_policies(
     events: list[CDCEvent],
     starvation_threshold: int = 5,
     env_kwargs: dict[str, object] | None = None,
+    timely_match_window_steps: int = 10,
 ) -> pd.DataFrame:
     rows = []
     for policy_name in ("fifo", "strict_priority", "aging"):
@@ -165,6 +262,7 @@ def compare_policies(
             policy_name=policy_name,
             starvation_threshold=starvation_threshold,
             env_kwargs=env_kwargs,
+            timely_match_window_steps=timely_match_window_steps,
         )
         rows.append(
             {
@@ -174,6 +272,13 @@ def compare_policies(
                 "high_priority_average_delay_steps": metrics.high_priority_average_delay_steps,
                 "max_low_priority_wait_steps": metrics.max_low_priority_wait_steps,
                 "fairness_index": metrics.fairness_index,
+                "high_priority_match_rate": metrics.high_priority_match_rate,
+                "matched_high_priority_count": metrics.matched_high_priority_count,
+                "expected_high_priority_count": metrics.expected_high_priority_count,
+                "evaluated_priority_window_size": metrics.evaluated_priority_window_size,
+                "timely_high_priority_match_rate": metrics.timely_high_priority_match_rate,
+                "timely_matched_high_priority_count": metrics.timely_matched_high_priority_count,
+                "timely_match_window_steps": metrics.timely_match_window_steps,
                 "completed_events": metrics.completed_events,
             }
         )
@@ -189,6 +294,8 @@ def _is_comparison_cache_valid(
     output_path: Path,
     starvation_threshold: int,
     env_kwargs: dict[str, object] | None = None,
+    timely_match_window_steps: int = 10,
+    arrival_step_time_unit_seconds: float = ARRIVAL_STEP_TIME_UNIT_SECONDS,
 ) -> bool:
     metadata_path = _cache_metadata_path(output_path)
     if not output_path.exists() or not metadata_path.exists():
@@ -203,6 +310,9 @@ def _is_comparison_cache_valid(
         and metadata.get("data_path") == to_project_relative_path(data_path.resolve(), project_root)
         and metadata.get("starvation_threshold") == starvation_threshold
         and metadata.get("env_kwargs") == (env_kwargs or {})
+        and metadata.get("timely_match_window_steps") == timely_match_window_steps
+        and metadata.get("arrival_step_time_unit_seconds")
+        == float(arrival_step_time_unit_seconds)
         and metadata.get("data_mtime_ns") == data_path.stat().st_mtime_ns
     )
 
@@ -212,6 +322,8 @@ def _write_comparison_cache_metadata(
     output_path: Path,
     starvation_threshold: int,
     env_kwargs: dict[str, object] | None = None,
+    timely_match_window_steps: int = 10,
+    arrival_step_time_unit_seconds: float = ARRIVAL_STEP_TIME_UNIT_SECONDS,
 ) -> None:
     metadata_path = _cache_metadata_path(output_path)
     project_root = default_settings().project_root
@@ -220,6 +332,8 @@ def _write_comparison_cache_metadata(
         "data_path": to_project_relative_path(data_path.resolve(), project_root),
         "starvation_threshold": starvation_threshold,
         "env_kwargs": env_kwargs or {},
+        "timely_match_window_steps": timely_match_window_steps,
+        "arrival_step_time_unit_seconds": float(arrival_step_time_unit_seconds),
         "data_mtime_ns": data_path.stat().st_mtime_ns,
     }
     metadata_path.write_text(
@@ -233,20 +347,28 @@ def export_policy_comparison(
     output_path: Path,
     starvation_threshold: int = 5,
     env_kwargs: dict[str, object] | None = None,
+    timely_match_window_steps: int = 10,
+    arrival_step_time_unit_seconds: float = ARRIVAL_STEP_TIME_UNIT_SECONDS,
 ) -> pd.DataFrame:
     if _is_comparison_cache_valid(
         data_path,
         output_path,
         starvation_threshold,
         env_kwargs=env_kwargs,
+        timely_match_window_steps=timely_match_window_steps,
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
     ):
         return pd.read_csv(output_path)
 
-    events = load_scheduler_events(data_path)
+    events = load_scheduler_events(
+        data_path,
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
+    )
     comparison = compare_policies(
         events,
         starvation_threshold=starvation_threshold,
         env_kwargs=env_kwargs,
+        timely_match_window_steps=timely_match_window_steps,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     comparison.to_csv(output_path, index=False)
@@ -255,6 +377,8 @@ def export_policy_comparison(
         output_path,
         starvation_threshold,
         env_kwargs=env_kwargs,
+        timely_match_window_steps=timely_match_window_steps,
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
     )
     return comparison
 
@@ -269,6 +393,8 @@ def export_policy_comparison_figure(
         ("average_delay_steps", "Average Delay (steps)"),
         ("high_priority_average_delay_steps", "High-Priority Delay (steps)"),
         ("fairness_index", "Fairness Index"),
+        ("high_priority_match_rate", "High-Priority Match Rate"),
+        ("timely_high_priority_match_rate", "Timed High-Priority Match Rate"),
     ]
     colors = {
         "fifo": "#3B82F6",
@@ -279,7 +405,7 @@ def export_policy_comparison_figure(
         "double_dqn": "#14B8A6",
     }
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    fig, axes = plt.subplots(3, 2, figsize=(12, 12))
     axes = axes.flatten()
     policies = comparison["policy"].tolist()
 
@@ -295,6 +421,9 @@ def export_policy_comparison_figure(
         axis.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.4)
         for index, value in enumerate(values):
             axis.text(index, value, f"{value:.3f}", ha="center", va="bottom", fontsize=8)
+
+    for axis in axes[len(metrics) :]:
+        axis.axis("off")
 
     fig.suptitle("Scheduler Policy Comparison", fontsize=14)
     fig.tight_layout()

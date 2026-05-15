@@ -113,11 +113,13 @@ def test_run_pipeline_exports_datasets_and_aggregates_reports(monkeypatch) -> No
         }
         classifier_output_dir = project_root / "outputs" / "classifier"
         scheduler_output_dir = project_root / "outputs" / "scheduler"
+        classifier_dataset_dir = project_root / "data" / "processed_custom"
         scheduler_dataset_dir = project_root / "data" / "scheduler_processed"
 
         classifier_config = {
             "source": "configured_dataset",
             "dataset_config": str(dataset_config_path),
+            "classifier_dataset_dir": str(classifier_dataset_dir),
             "model_variant": "embedding_mlp",
             "batch_size": 8,
             "epochs": 1,
@@ -241,7 +243,7 @@ def test_run_pipeline_exports_datasets_and_aggregates_reports(monkeypatch) -> No
             run_name="pytest_pipeline",
         )
 
-        assert (project_root / "data" / "processed" / "train.csv").exists()
+        assert (classifier_dataset_dir / "train.csv").exists()
         assert (project_root / "data" / "scheduler_processed" / "test.csv").exists()
         assert (classifier_output_dir / "pytest_pipeline" / "classifier_report.json").exists()
         assert (scheduler_output_dir / "pytest_pipeline" / "scheduler_report.json").exists()

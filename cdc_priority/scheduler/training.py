@@ -189,14 +189,18 @@ def _evaluate_deterministic_policy(
 
 def _evaluate_validation_summary(
     env: SchedulerEnv,
+    events: list[CDCEvent],
     action_selector,
     max_steps: int,
+    timely_match_window_steps: int,
 ) -> dict[str, float]:
     state = env.reset()
     total_reward = 0.0
     delay_totals: list[int] = []
     high_delay_totals: list[int] = []
     per_priority_delay: dict[str, list[int]] = {"high": [], "medium": [], "low": []}
+    processed_event_ids: list[str] = []
+    processed_high_delays: dict[str, int] = {}
 
     for _ in range(max_steps):
         action = action_selector(state)
@@ -207,6 +211,12 @@ def _evaluate_validation_summary(
             delay = int(info.get("processed_delay_steps", 0))
             delay_totals.append(delay)
             per_priority_delay[priority].append(delay)
+            processed_event_id = info.get("processed_event_id")
+            if processed_event_id is not None:
+                processed_event_id = str(processed_event_id)
+                processed_event_ids.append(processed_event_id)
+                if priority == "high":
+                    processed_high_delays[processed_event_id] = delay
             if priority == "high":
                 high_delay_totals.append(delay)
         if done:
@@ -222,12 +232,43 @@ def _evaluate_validation_summary(
     numerator = sum(per_class_means) ** 2
     denominator = len(per_class_means) * sum(value * value for value in per_class_means)
     fairness_index = 0.0 if denominator <= 1e-12 else numerator / denominator
+    expected_high_ids = {event.event_id for event in events if event.priority == "high"}
+    expected_high_count = len(expected_high_ids)
+    if expected_high_count <= 0:
+        matched_high_priority_count = 0
+        high_priority_match_rate = 1.0
+        evaluated_priority_window_size = 0
+        timely_matched_high_priority_count = 0
+        timely_high_priority_match_rate = 1.0
+    else:
+        priority_window = processed_event_ids[:expected_high_count]
+        matched_high_priority_count = sum(
+            1 for event_id in priority_window if event_id in expected_high_ids
+        )
+        high_priority_match_rate = matched_high_priority_count / expected_high_count
+        evaluated_priority_window_size = len(priority_window)
+        timely_matched_high_priority_count = sum(
+            1
+            for event_id in expected_high_ids
+            if processed_high_delays.get(event_id, timely_match_window_steps + 1)
+            <= timely_match_window_steps
+        )
+        timely_high_priority_match_rate = (
+            timely_matched_high_priority_count / expected_high_count
+        )
 
     return {
         "validation_reward": total_reward,
         "validation_average_delay_steps": average_delay_steps,
         "validation_high_priority_average_delay_steps": high_average_delay_steps,
         "validation_fairness_index": fairness_index,
+        "validation_high_priority_match_rate": high_priority_match_rate,
+        "validation_matched_high_priority_count": matched_high_priority_count,
+        "validation_expected_high_priority_count": expected_high_count,
+        "validation_evaluated_priority_window_size": evaluated_priority_window_size,
+        "validation_timely_high_priority_match_rate": timely_high_priority_match_rate,
+        "validation_timely_matched_high_priority_count": timely_matched_high_priority_count,
+        "validation_timely_match_window_steps": timely_match_window_steps,
     }
 
 
@@ -273,6 +314,7 @@ def _evaluate_trained_agent(
     env_kwargs: dict[str, object],
     action_selector,
     policy_name: str,
+    timely_match_window_steps: int,
 ) -> tuple[dict[str, float | int | str], dict[str, int]]:
     env = SchedulerEnv(
         events=events,
@@ -282,6 +324,8 @@ def _evaluate_trained_agent(
     delay_totals: list[int] = []
     high_delay_totals: list[int] = []
     per_priority_delay: dict[str, list[int]] = {"high": [], "medium": [], "low": []}
+    processed_event_ids: list[str] = []
+    processed_high_delays: dict[str, int] = {}
     action_counts = {
         action_name: 0
         for action_name in SchedulerEnv.ACTION_NAMES
@@ -298,6 +342,12 @@ def _evaluate_trained_agent(
             delay = int(info.get("processed_delay_steps", 0))
             delay_totals.append(delay)
             per_priority_delay[priority].append(delay)
+            processed_event_id = info.get("processed_event_id")
+            if processed_event_id is not None:
+                processed_event_id = str(processed_event_id)
+                processed_event_ids.append(processed_event_id)
+                if priority == "high":
+                    processed_high_delays[processed_event_id] = delay
             if priority == "high":
                 high_delay_totals.append(delay)
             completed += 1
@@ -316,6 +366,30 @@ def _evaluate_trained_agent(
     denominator = len(per_class_means) * sum(value * value for value in per_class_means)
     fairness_index = 0.0 if denominator <= 1e-12 else numerator / denominator
     throughput = completed / max(env.current_step, 1)
+    expected_high_ids = {event.event_id for event in events if event.priority == "high"}
+    expected_high_count = len(expected_high_ids)
+    if expected_high_count <= 0:
+        matched_high_priority_count = 0
+        high_priority_match_rate = 1.0
+        evaluated_priority_window_size = 0
+        timely_matched_high_priority_count = 0
+        timely_high_priority_match_rate = 1.0
+    else:
+        priority_window = processed_event_ids[:expected_high_count]
+        matched_high_priority_count = sum(
+            1 for event_id in priority_window if event_id in expected_high_ids
+        )
+        high_priority_match_rate = matched_high_priority_count / expected_high_count
+        evaluated_priority_window_size = len(priority_window)
+        timely_matched_high_priority_count = sum(
+            1
+            for event_id in expected_high_ids
+            if processed_high_delays.get(event_id, timely_match_window_steps + 1)
+            <= timely_match_window_steps
+        )
+        timely_high_priority_match_rate = (
+            timely_matched_high_priority_count / expected_high_count
+        )
 
     return (
         {
@@ -325,6 +399,13 @@ def _evaluate_trained_agent(
             "high_priority_average_delay_steps": high_average_delay_steps,
             "max_low_priority_wait_steps": max_low_priority_wait_steps,
             "fairness_index": fairness_index,
+            "high_priority_match_rate": high_priority_match_rate,
+            "matched_high_priority_count": matched_high_priority_count,
+            "expected_high_priority_count": expected_high_count,
+            "evaluated_priority_window_size": evaluated_priority_window_size,
+            "timely_high_priority_match_rate": timely_high_priority_match_rate,
+            "timely_matched_high_priority_count": timely_matched_high_priority_count,
+            "timely_match_window_steps": timely_match_window_steps,
             "completed_events": completed,
         },
         action_counts,
@@ -342,9 +423,21 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
     dataset_dir = Path(str(config.values["scheduler_dataset_dir"]))
     if not dataset_dir.is_absolute():
         dataset_dir = settings.project_root / dataset_dir
-    train_events = load_scheduler_events(dataset_dir / "train.csv")
-    valid_events = load_scheduler_events(dataset_dir / "valid.csv")
-    test_events = load_scheduler_events(dataset_dir / "test.csv")
+    arrival_step_time_unit_seconds = float(
+        config.values.get("arrival_step_time_unit_seconds", 1.0)
+    )
+    train_events = load_scheduler_events(
+        dataset_dir / "train.csv",
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
+    )
+    valid_events = load_scheduler_events(
+        dataset_dir / "valid.csv",
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
+    )
+    test_events = load_scheduler_events(
+        dataset_dir / "test.csv",
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
+    )
 
     algorithm = str(config.values.get("algorithm", "dqn")).lower()
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -364,6 +457,7 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
     selection_fairness_tolerance = float(
         config.values.get("selection_fairness_tolerance", 1e-4)
     )
+    timely_match_window_steps = int(config.values.get("timely_match_window_steps", 10))
     rng = random.Random(random_state)
 
     validation_events = _validation_events(valid_events, valid_event_window)
@@ -446,12 +540,14 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
             )
             validation_summary = _evaluate_validation_summary(
                 valid_env,
+                validation_events,
                 lambda state: agent.select_action(
                     state.to_vector(),
                     deterministic=True,
                     allowed_actions=state.allowed_actions(valid_env.starvation_threshold),
                 )[0],
                 max_steps=max_steps,
+                timely_match_window_steps=timely_match_window_steps,
             )
             validation_reward = validation_summary["validation_reward"]
             best_candidate = {
@@ -469,8 +565,10 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
             agent.epsilon = 0.0
             validation_summary = _evaluate_validation_summary(
                 valid_env,
+                validation_events,
                 lambda state: agent.select_action(state.to_vector()),
                 max_steps=max_steps,
+                timely_match_window_steps=timely_match_window_steps,
             )
             validation_reward = validation_summary["validation_reward"]
             agent.epsilon = original_epsilon
@@ -493,6 +591,12 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
                 "validation_fairness_index": validation_summary[
                     "validation_fairness_index"
                 ],
+                "validation_high_priority_match_rate": validation_summary[
+                    "validation_high_priority_match_rate"
+                ],
+                "validation_timely_high_priority_match_rate": validation_summary[
+                    "validation_timely_high_priority_match_rate"
+                ],
                 "steps_used": steps_used,
                 "average_loss": average_loss,
                 "epsilon": getattr(agent, "epsilon", 0.0),
@@ -503,6 +607,8 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
             f"train_reward={train_reward:.4f} "
             f"validation_reward={validation_reward:.4f} "
             f"validation_high_delay={validation_summary['validation_high_priority_average_delay_steps']:.4f} "
+            f"validation_match={validation_summary['validation_high_priority_match_rate']:.4f} "
+            f"validation_timed_match={validation_summary['validation_timely_high_priority_match_rate']:.4f} "
             f"validation_fairness={validation_summary['validation_fairness_index']:.4f} "
             f"control={getattr(agent, 'epsilon', 0.0):.4f}"
         )
@@ -569,12 +675,15 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
         output_path=output_dir / "policy_comparison.csv",
         starvation_threshold=starvation_threshold,
         env_kwargs=env_kwargs,
+        timely_match_window_steps=timely_match_window_steps,
+        arrival_step_time_unit_seconds=arrival_step_time_unit_seconds,
     )
     trained_metrics, action_counts = _evaluate_trained_agent(
         events=test_events,
         env_kwargs=env_kwargs,
         action_selector=action_selector,
         policy_name=trained_policy_name,
+        timely_match_window_steps=timely_match_window_steps,
     )
     updated_comparison = append_policy_result(
         output_dir / "policy_comparison.csv",
@@ -599,6 +708,8 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
                 "history": history,
                 "train_event_window": train_event_window,
                 "valid_event_window": valid_event_window,
+                "timely_match_window_steps": timely_match_window_steps,
+                "arrival_step_time_unit_seconds": arrival_step_time_unit_seconds,
                 "policy_comparison": updated_comparison.to_dict(orient="records"),
                 f"{trained_policy_name}_test_metrics": trained_metrics,
                 f"{trained_policy_name}_action_counts": action_counts,

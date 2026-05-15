@@ -50,7 +50,10 @@ def run_pipeline(
         scheduler_values.get("run_name") or ""
     ).strip() or generate_run_name("pipeline")
 
-    classifier_dataset_output_dir = settings.project_root / "data" / "processed"
+    classifier_dataset_output_dir = _resolve_project_path(
+        settings.project_root,
+        classifier_values.get("classifier_dataset_dir", "data/processed"),
+    )
     scheduler_dataset_output_dir = _resolve_project_path(
         settings.project_root,
         scheduler_values["scheduler_dataset_dir"],

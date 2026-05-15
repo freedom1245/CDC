@@ -4,7 +4,7 @@ import uuid
 
 import torch
 
-from cdc_priority.classifier.baselines import evaluate_baseline_models
+from cdc_priority.classifier.baselines import HAS_LIGHTGBM, evaluate_baseline_models
 from cdc_priority.classifier.evaluate import (
     build_classification_metrics,
     build_confusion_matrix_data,
@@ -132,7 +132,10 @@ def test_evaluate_baseline_models() -> None:
     )
 
     model_names = {row["model"] for row in rows}
-    assert model_names == {"logistic_regression", "random_forest"}
+    expected_model_names = {"logistic_regression", "random_forest"}
+    if HAS_LIGHTGBM:
+        expected_model_names.add("lightgbm")
+    assert model_names == expected_model_names
     assert all("accuracy" in row for row in rows)
 
 

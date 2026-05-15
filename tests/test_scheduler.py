@@ -258,6 +258,86 @@ def test_simulate_policy_returns_metrics() -> None:
     assert metrics.completed_events == 3
     assert metrics.throughput > 0
     assert metrics.average_delay_steps >= 0
+    assert 0.0 <= metrics.high_priority_match_rate <= 1.0
+    assert 0.0 <= metrics.timely_high_priority_match_rate <= 1.0
+
+
+def test_simulate_policy_reports_high_priority_match_rate_for_top_k_window() -> None:
+    delayed_high_events = [
+        CDCEvent("low_first", "low", arrival_step=0, sync_cost=1.0, service_steps=1),
+        CDCEvent("high_second", "high", arrival_step=1, sync_cost=1.0, service_steps=1),
+        CDCEvent("high_third", "high", arrival_step=2, sync_cost=1.0, service_steps=1),
+    ]
+    immediate_high_events = [
+        CDCEvent("high_first", "high", arrival_step=0, sync_cost=1.0, service_steps=1),
+        CDCEvent("high_second", "high", arrival_step=0, sync_cost=1.0, service_steps=1),
+        CDCEvent("low_third", "low", arrival_step=0, sync_cost=1.0, service_steps=1),
+    ]
+
+    env_kwargs = {"defer_low_priority": False}
+    fifo_metrics = simulate_policy(
+        delayed_high_events,
+        policy_name="fifo",
+        starvation_threshold=5,
+        env_kwargs=env_kwargs,
+    )
+    strict_metrics = simulate_policy(
+        delayed_high_events,
+        policy_name="strict_priority",
+        starvation_threshold=5,
+        env_kwargs=env_kwargs,
+    )
+    strict_full_match_metrics = simulate_policy(
+        immediate_high_events,
+        policy_name="strict_priority",
+        starvation_threshold=5,
+        env_kwargs=env_kwargs,
+    )
+
+    assert fifo_metrics.expected_high_priority_count == 2
+    assert fifo_metrics.evaluated_priority_window_size == 2
+    assert fifo_metrics.matched_high_priority_count == 1
+    assert fifo_metrics.high_priority_match_rate == 0.5
+
+    assert strict_metrics.expected_high_priority_count == 2
+    assert strict_metrics.matched_high_priority_count == 1
+    assert strict_metrics.high_priority_match_rate == 0.5
+
+    assert strict_full_match_metrics.expected_high_priority_count == 2
+    assert strict_full_match_metrics.matched_high_priority_count == 2
+    assert strict_full_match_metrics.high_priority_match_rate == 1.0
+
+
+def test_simulate_policy_reports_timed_high_priority_match_rate() -> None:
+    events = [
+        CDCEvent("high_fast", "high", arrival_step=0, sync_cost=1.0, service_steps=1),
+        CDCEvent("low_long", "low", arrival_step=0, sync_cost=10.0, service_steps=10),
+        CDCEvent("high_late", "high", arrival_step=1, sync_cost=1.0, service_steps=1),
+    ]
+
+    env_kwargs = {"defer_low_priority": False}
+    fifo_metrics = simulate_policy(
+        events,
+        policy_name="fifo",
+        starvation_threshold=5,
+        env_kwargs=env_kwargs,
+        timely_match_window_steps=5,
+    )
+    strict_metrics = simulate_policy(
+        events,
+        policy_name="strict_priority",
+        starvation_threshold=5,
+        env_kwargs=env_kwargs,
+        timely_match_window_steps=5,
+    )
+
+    assert fifo_metrics.expected_high_priority_count == 2
+    assert fifo_metrics.timely_matched_high_priority_count == 1
+    assert fifo_metrics.timely_high_priority_match_rate == 0.5
+    assert fifo_metrics.timely_match_window_steps == 5
+
+    assert strict_metrics.timely_matched_high_priority_count == 2
+    assert strict_metrics.timely_high_priority_match_rate == 1.0
 
 
 def test_export_policy_comparison_writes_csv() -> None:
@@ -288,6 +368,8 @@ def test_export_policy_comparison_writes_csv() -> None:
 
         assert output_path.exists()
         assert set(comparison["policy"]) == {"fifo", "strict_priority", "aging"}
+        assert "high_priority_match_rate" in comparison.columns
+        assert "timely_high_priority_match_rate" in comparison.columns
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -362,6 +444,13 @@ def test_export_policy_comparison_figure_writes_image() -> None:
                 "high_priority_average_delay_steps": [100, 10, 20],
                 "max_low_priority_wait_steps": [200, 300, 250],
                 "fairness_index": [1.0, 0.5, 0.6],
+                "high_priority_match_rate": [0.1, 0.9, 0.7],
+                "matched_high_priority_count": [1, 9, 7],
+                "expected_high_priority_count": [10, 10, 10],
+                "evaluated_priority_window_size": [10, 10, 10],
+                "timely_high_priority_match_rate": [0.05, 0.8, 0.6],
+                "timely_matched_high_priority_count": [1, 8, 6],
+                "timely_match_window_steps": [10, 10, 10],
                 "completed_events": [3, 3, 3],
             }
         ).to_csv(csv_path, index=False)

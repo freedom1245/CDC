@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from scipy import sparse
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -7,9 +8,17 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from .evaluate import build_classification_metrics, build_classification_report
 from .features import EncodedDataset
 
+try:
+    from lightgbm import LGBMClassifier
+
+    HAS_LIGHTGBM = True
+except ImportError:  # pragma: no cover - exercised indirectly in environments without lightgbm
+    LGBMClassifier = None
+    HAS_LIGHTGBM = False
+
 
 def build_baseline_models(random_state: int) -> dict[str, object]:
-    return {
+    models: dict[str, object] = {
         "logistic_regression": LogisticRegression(
             solver="saga",
             max_iter=5000,
@@ -20,6 +29,15 @@ def build_baseline_models(random_state: int) -> dict[str, object]:
             random_state=random_state,
         ),
     }
+    if HAS_LIGHTGBM and LGBMClassifier is not None:
+        models["lightgbm"] = LGBMClassifier(
+            n_estimators=200,
+            learning_rate=0.05,
+            num_leaves=31,
+            random_state=random_state,
+            verbosity=-1,
+        )
+    return models
 
 
 def _merge_feature_blocks(categorical: np.ndarray, numeric: np.ndarray) -> np.ndarray:
@@ -98,6 +116,35 @@ def build_logistic_feature_matrices(
     return train_features, test_features, train_labels, test_labels
 
 
+def build_lightgbm_feature_matrices(
+    encoded: EncodedDataset,
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+    (
+        train_categorical,
+        test_categorical,
+        train_numeric,
+        test_numeric,
+        train_labels,
+        test_labels,
+    ) = _to_numpy(encoded)
+
+    train_frame = pd.DataFrame()
+    test_frame = pd.DataFrame()
+
+    for index, column in enumerate(encoded.artifacts.categorical_columns):
+        train_frame[column] = pd.Categorical(train_categorical[:, index].astype(int))
+        test_frame[column] = pd.Categorical(
+            test_categorical[:, index].astype(int),
+            categories=train_frame[column].cat.categories,
+        )
+
+    for index, column in enumerate(encoded.artifacts.numeric_columns):
+        train_frame[column] = train_numeric[:, index].astype(np.float32)
+        test_frame[column] = test_numeric[:, index].astype(np.float32)
+
+    return train_frame, test_frame, train_labels, test_labels
+
+
 def evaluate_baseline_models(
     encoded: EncodedDataset,
     class_names: list[str],
@@ -110,12 +157,18 @@ def evaluate_baseline_models(
     logistic_train_features, logistic_test_features, _, _ = (
         build_logistic_feature_matrices(encoded)
     )
+    lightgbm_train_features, lightgbm_test_features, _, _ = (
+        build_lightgbm_feature_matrices(encoded)
+    )
     rows: list[dict[str, object]] = []
 
     for model_name, model in build_baseline_models(random_state).items():
         if model_name == "logistic_regression":
             train_features = logistic_train_features
             test_features = logistic_test_features
+        elif model_name == "lightgbm":
+            train_features = lightgbm_train_features
+            test_features = lightgbm_test_features
         else:
             train_features = rf_train_features
             test_features = rf_test_features

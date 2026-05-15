@@ -1,0 +1,118 @@
+data_path: data/industry/dm_alarm_events.csv
+target: priority_label
+
+categorical_columns:
+  - event_type
+  - table_name
+  - business_domain
+  - source_service
+  - user_level
+
+numeric_columns:
+  - record_size
+  - changed_columns_count
+  - estimated_sync_cost
+  - business_value
+  - consistency_risk
+  - dependency_count
+  - queue_wait_time
+  - deadline
+  - retry_count
+  - source_load
+  - db_load
+  - is_peak_hour
+  - is_hot_data
+
+split:
+  train: 0.7
+  valid: 0.15
+  test: 0.15
+
+labeling:
+  impact_score:
+    components:
+      deadline_miss_impact:
+        weight: 0.30
+        mode: deadline_risk
+        params:
+          pressure_threshold: 0.75
+          sigmoid_scale: 7.0
+          retry_boost: 0.30
+          peak_hour_boost: 0.10
+          load_boost: 0.25
+
+      delay_cost_impact:
+        weight: 0.25
+        mode: delay_cost
+        params:
+          delay_threshold: 0.35
+          delay_scale: 5.5
+          business_value_boost: 0.35
+
+      consistency_impact:
+        weight: 0.20
+        mode: consistency_risk
+        numeric_weights:
+          consistency_risk: 0.50
+          dependency_count: 0.30
+        categorical_weights:
+          event_type: 0.10
+          table_name: 0.05
+          source_service: 0.05
+        hot_values:
+          event_type:
+            - TERMINAL_POWER_OFF
+            - TERMINAL_POWER_ON
+            - PHASE_REVERSE
+            - COMMUNICATION_OVERFLOW
+          table_name:
+            - MK_MC_TERM_ALARM
+        interactions:
+          - columns:
+              - event_type
+              - business_domain
+            hot_values:
+              event_type:
+                - TERMINAL_POWER_OFF
+                - TERMINAL_POWER_ON
+                - PHASE_REVERSE
+              business_domain:
+                - TERMINAL_STATUS
+                - METERING
+            weight: 0.15
+
+      starvation_externality:
+        weight: 0.10
+        mode: fairness_cost
+        hot_values:
+          business_domain:
+            - OTHER
+            - DEVICE_ALARM
+          user_level:
+            - NORMAL
+        params:
+          low_priority_boost: 0.45
+          peak_hour_boost: 0.15
+
+      throughput_value:
+        weight: 0.15
+        mode: business_value
+        numeric_weights:
+          business_value: 0.70
+        categorical_weights:
+          user_level: 0.20
+          business_domain: 0.10
+        hot_values:
+          user_level:
+            - CRITICAL
+            - IMPORTANT
+          business_domain:
+            - TERMINAL_STATUS
+            - COMMUNICATION
+            - METERING
+
+    thresholds:
+      strategy: quantile
+      low_high_quantiles:
+        - 0.33
+        - 0.66

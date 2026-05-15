@@ -67,3 +67,9 @@ pytest-temp-*/
 # Notebook checkpoints
 .ipynb_checkpoints/
 
+*.docx
+*.pdf
+*.md
+*.txt
+*.ps1
+*.vbs
