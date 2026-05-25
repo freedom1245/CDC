@@ -11,7 +11,6 @@ from cdc_priority.scheduler.evaluate import (
     load_scheduler_events,
     simulate_policy,
 )
-from cdc_priority.scheduler.agent import DoubleDQNAgent, PPOAgent
 from cdc_priority.scheduler.event import CDCEvent
 from cdc_priority.scheduler.reward import compute_reward
 from cdc_priority.scheduler.training import (
@@ -591,78 +590,6 @@ def test_queue_manager_deadline_count() -> None:
 
     qm.increment_wait_steps(0)
     assert qm.deadline_missed_count() == 1
-
-
-def test_ppo_agent_can_sample_and_optimize() -> None:
-    agent = PPOAgent(
-        action_count=3,
-        state_dim=8,
-        hidden_dim=32,
-        update_epochs=1,
-        mini_batch_size=2,
-        device="cpu",
-    )
-
-    for index in range(4):
-        state = [float(index), 1.0, 2.0, 3.0, 4.0, 5.0, 0.2, 0.4]
-        action, log_prob, value = agent.select_action(state, deterministic=False)
-        assert 0 <= action < 3
-        agent.store_transition(
-            state=state,
-            action=action,
-            log_prob=log_prob,
-            reward=1.0,
-            done=index == 3,
-            value=value,
-        )
-
-    loss = agent.optimize(last_value=0.0)
-
-    assert isinstance(loss, float)
-
-
-def test_double_dqn_agent_can_optimize() -> None:
-    agent = DoubleDQNAgent(
-        action_count=6,
-        state_dim=8,
-        replay_capacity=16,
-        batch_size=4,
-        device="cpu",
-    )
-
-    for index in range(6):
-        state = [float(index), 1.0, 2.0, 3.0, 4.0, 5.0, 0.2, 0.4]
-        next_state = [float(index + 1), 1.5, 2.5, 3.5, 4.5, 5.5, 0.3, 0.5]
-        agent.store_transition(
-            state=state,
-            action=index % 6,
-            reward=1.0,
-            next_state=next_state,
-            done=index == 5,
-        )
-
-    loss = agent.optimize()
-
-    assert isinstance(loss, float)
-
-
-def test_ppo_agent_respects_allowed_action_mask() -> None:
-    agent = PPOAgent(
-        action_count=6,
-        state_dim=8,
-        hidden_dim=32,
-        update_epochs=1,
-        mini_batch_size=2,
-        device="cpu",
-    )
-
-    action, _, _ = agent.select_action(
-        [10.0, 20.0, 4.0, 1.0, 5.0, 24.0, 0.5, 1.2],
-        deterministic=False,
-        allowed_actions=[0, 1, 2, 4],
-    )
-
-    assert action in {0, 1, 2, 4}
 
 
 def test_validation_candidate_selection_prefers_lower_high_delay_when_rewards_are_close() -> None:

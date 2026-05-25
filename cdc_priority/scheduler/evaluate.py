@@ -401,8 +401,6 @@ def export_policy_comparison_figure(
         "strict_priority": "#EF4444",
         "aging": "#10B981",
         "dqn": "#F59E0B",
-        "ppo": "#8B5CF6",
-        "double_dqn": "#14B8A6",
     }
 
     fig, axes = plt.subplots(3, 2, figsize=(12, 12))

@@ -5,7 +5,7 @@
 项目当前包含两条完整实验线：
 
 - 公开数据集实验线
-- 达梦行业数据集实验线
+- 行业数据集实验线
 
 整体采用两阶段流程：
 
@@ -38,12 +38,12 @@
 - 调度配置：[scheduler.yaml](/D:/Code/Python/configs/scheduler.yaml:1)
 - 数据集配置：[dataset.yaml](/D:/Code/Python/configs/dataset.yaml:1)
 
-### 达梦行业数据集
+### 行业数据集
 
 - 分类配置：[classifier_industry_dm_alarm.yaml](/D:/Code/Python/configs/classifier_industry_dm_alarm.yaml:1)
 - 调度配置：[scheduler_industry_dm_alarm.yaml](/D:/Code/Python/configs/scheduler_industry_dm_alarm.yaml:1)
 - 数据集配置：[dataset_industry_dm_alarm.yaml](/D:/Code/Python/configs/dataset_industry_dm_alarm.yaml:1)
-- 行业数据导出脚本：[export_dm_industry_dataset.py](/D:/Code/Python/export_dm_industry_dataset.py:1)
+- 行业数据导出脚本：[export_industry_dataset.py](/D:/Code/Python/export_industry_dataset.py:1)
 
 行业数据当前默认设定：
 
@@ -69,16 +69,18 @@ D:\anaconda\envs\dl\python.exe build_scheduler_dataset.py
 训练分类器：
 
 ```powershell
-D:\anaconda\envs\dl\python.exe train_classifier.py --config D:\Code\Python\configs\classifier.yaml --run-name public-manual
+D:\anaconda\envs\dl\python.exe train_classifier.py --config configs\classifier.yaml --run-name public-embeddingmlp
+D:\anaconda\envs\dl\python.exe train_classifier.py --config configs\classifier.yaml --model mlp --run-name public-mlp
+D:\anaconda\envs\dl\python.exe train_classifier.py --config configs\classifier.yaml --model attention_tabular --run-name public-attention_tabular
 ```
 
 训练调度器：
 
 ```powershell
-D:\anaconda\envs\dl\python.exe train_scheduler.py --config D:\Code\Python\configs\scheduler.yaml --run-name public-manual
+D:\anaconda\envs\dl\python.exe train_scheduler.py --config configs\scheduler.yaml --run-name public
 ```
 
-### 2. 达梦行业数据集单模块实验
+### 2. 行业数据集单模块实验
 
 先导出行业事件数据（默认 `60s` burst 聚合）：
 
@@ -89,28 +91,21 @@ D:\anaconda\envs\dl\python.exe export_dm_industry_dataset.py --password Hzy12345
 再构建行业调度中间数据：
 
 ```powershell
-@'
-from pathlib import Path
-from cdc_priority.data.dataset_builder import build_and_export_scheduler_dataset_from_config
-build_and_export_scheduler_dataset_from_config(
-    Path(r'D:\Code\Python\configs\dataset_industry_dm_alarm.yaml'),
-    Path(r'D:\Code\Python\data\scheduler_processed_industry_dm_alarm'),
-    timestamp_column='timestamp',
-)
-print('done')
-'@ | D:\anaconda\envs\dl\python.exe -
+D:\anaconda\envs\dl\python.exe -c "from pathlib import Path; from cdc_priority.data.dataset_builder import build_and_export_scheduler_dataset_from_config; build_and_export_scheduler_dataset_from_config(Path(r'D:\Code\Python\configs\dataset_industry_dm_alarm.yaml'), Path(r'D:\Code\Python\data\scheduler_processed_industry_dm_alarm'), timestamp_column='timestamp'); print('done')"
+
+D:\anaconda\envs\dl\python.exe train_scheduler.py --config configs\scheduler_industry_alarm.yaml --run-name industry-burst-60s
 ```
 
 训练行业分类器：
 
 ```powershell
-D:\anaconda\envs\dl\python.exe train_classifier.py --config D:\Code\Python\configs\classifier_industry_dm_alarm.yaml --run-name dm-manual
+D:\anaconda\envs\dl\python.exe train_classifier.py --config configs\classifier_industry_alarm.yaml --run-name industry 
 ```
 
 训练行业调度器：
 
 ```powershell
-D:\anaconda\envs\dl\python.exe train_scheduler.py --config D:\Code\Python\configs\scheduler_industry_dm_alarm.yaml --run-name dm-manual
+D:\anaconda\envs\dl\python.exe train_scheduler.py --config configs\scheduler_industry_alarm.yaml --run-name industry
 ```
 
 ## 端到端复现命令
@@ -118,7 +113,7 @@ D:\anaconda\envs\dl\python.exe train_scheduler.py --config D:\Code\Python\config
 ### 公开数据集端到端主实验
 
 ```powershell
-D:\anaconda\envs\dl\python.exe run_pipeline.py --classifier-config D:\Code\Python\configs\classifier.yaml --scheduler-config D:\Code\Python\configs\scheduler.yaml --run-name final-public-pipeline
+D:\anaconda\envs\dl\python.exe run_pipeline.py --classifier-config configs\classifier.yaml --scheduler-config configs\scheduler.yaml --run-name final-public-pipeline
 ```
 
 主产物：
@@ -127,17 +122,17 @@ D:\anaconda\envs\dl\python.exe run_pipeline.py --classifier-config D:\Code\Pytho
 - [classifier_report.json](/D:/Code/Python/outputs/classifier/final-public-pipeline/classifier_report.json:1)
 - [scheduler_report.json](/D:/Code/Python/outputs/scheduler/final-public-pipeline/scheduler_report.json:1)
 
-### 达梦行业数据集端到端主实验
+### 行业数据集端到端主实验
 
 ```powershell
-D:\anaconda\envs\dl\python.exe run_pipeline.py --classifier-config D:\Code\Python\configs\classifier_industry_dm_alarm.yaml --scheduler-config D:\Code\Python\configs\scheduler_industry_dm_alarm.yaml --run-name final-dm-pipeline
+D:\anaconda\envs\dl\python.exe run_pipeline.py --classifier-config configs\classifier_industry_alarm.yaml --scheduler-config configs\scheduler_industry_alarm.yaml --run-name final-industry-pipeline
 ```
 
 主产物：
 
-- [pipeline_report.json](/D:/Code/Python/outputs/pipeline/final-dm-pipeline/pipeline_report.json:1)
-- [classifier_report.json](/D:/Code/Python/outputs/classifier/final-dm-pipeline/classifier_report.json:1)
-- [scheduler_report.json](/D:/Code/Python/outputs/scheduler/final-dm-pipeline/scheduler_report.json:1)
+- [pipeline_report.json](/D:/Code/Python/outputs/pipeline/final-industry-pipeline/pipeline_report.json:1)
+- [classifier_report.json](/D:/Code/Python/outputs/classifier/final-industry-pipeline/classifier_report.json:1)
+- [scheduler_report.json](/D:/Code/Python/outputs/scheduler/final-industry-pipeline/scheduler_report.json:1)
 
 ## 最终主结果
 
@@ -226,16 +221,9 @@ D:\anaconda\envs\dl\python.exe -m pytest tests/test_pipeline.py -q -p no:cachepr
 D:\anaconda\envs\dl\python.exe -m pytest tests/test_dm_industry_export.py -q -p no:cacheprovider
 ```
 
-最终验收建议执行：
+最终验收执行：
 
 ```powershell
 D:\anaconda\envs\dl\python.exe -m pytest tests/test_pipeline.py tests/test_dm_industry_export.py tests/test_scheduler.py tests/test_classifier.py tests/test_data.py -q -p no:cacheprovider
 ```
 
-## 相关材料
-
-- 详细报告：[PROJECT_PROGRESS_REPORT_20260506.md](/D:/Code/Python/PROJECT_PROGRESS_REPORT_20260506.md:1)
-- 一页摘要：[PROJECT_PROGRESS_SUMMARY_20260510.md](/D:/Code/Python/PROJECT_PROGRESS_SUMMARY_20260510.md:1)
-- 交付清单：[FINAL_DELIVERY_CHECKLIST.md](/D:/Code/Python/FINAL_DELIVERY_CHECKLIST.md:1)
-- 答辩提纲：[DEFENSE_OUTLINE.md](/D:/Code/Python/DEFENSE_OUTLINE.md:1)
-- 答辩问答：[DEFENSE_QA.md](/D:/Code/Python/DEFENSE_QA.md:1)

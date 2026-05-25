@@ -36,6 +36,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional output subdirectory name for this classifier run.",
     )
+    classifier_parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=("mlp", "embedding_mlp", "attention_tabular"),
+        help="Optional classifier model override.",
+    )
 
     classifier_ablation_parser = subparsers.add_parser("classifier-ablation")
     classifier_ablation_parser.add_argument(
@@ -151,7 +158,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     if args.command == "classifier":
-        run_classifier_training(args.config, run_name=args.run_name)
+        run_classifier_training(
+            args.config,
+            run_name=args.run_name,
+            model_override=args.model,
+        )
         return
 
     if args.command == "classifier-ablation":

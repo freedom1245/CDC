@@ -8,13 +8,6 @@ train_event_window: 12000
 valid_event_window: 6000
 random_state: 42
 timely_match_window_steps: 10
-ppo_hidden_dim: 128
-gae_lambda: 0.95
-ppo_clip_epsilon: 0.2
-ppo_update_epochs: 4
-ppo_mini_batch_size: 128
-ppo_value_coef: 0.5
-ppo_entropy_coef: 0.01
 queue_capacity: 10000
 service_rate: 128
 starvation_threshold: 20

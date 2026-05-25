@@ -6,7 +6,7 @@ import torch
 
 from ..settings import default_settings, load_yaml_config
 from ..utils import ensure_directory, resolve_run_output_dir, to_project_relative_path
-from .agent import DQNAgent, DoubleDQNAgent, PPOAgent
+from .agent import DQNAgent
 from .env import SchedulerEnv
 from .evaluate import (
     append_policy_result,
@@ -131,44 +131,6 @@ def _run_single_dqn_episode(
             return total_reward, step + 1, sum(losses) / max(len(losses), 1)
 
     return total_reward, max_steps, sum(losses) / max(len(losses), 1)
-
-
-def _run_single_ppo_episode(
-    env: SchedulerEnv,
-    agent: PPOAgent,
-    max_steps: int,
-) -> tuple[float, int, float]:
-    state = env.reset()
-    total_reward = 0.0
-    steps_used = 0
-
-    for step in range(max_steps):
-        state_vector = state.to_vector()
-        action, log_prob, value = agent.select_action(
-            state_vector,
-            deterministic=False,
-            allowed_actions=state.allowed_actions(env.starvation_threshold),
-        )
-        next_state, reward, done, _ = env.step(action)
-        agent.store_transition(
-            state_vector,
-            action,
-            log_prob,
-            reward,
-            done,
-            value,
-        )
-        total_reward += reward
-        state = next_state
-        steps_used = step + 1
-        if done:
-            break
-
-    last_value = 0.0
-    if steps_used > 0 and not done:
-        last_value = agent.estimate_value(state.to_vector())
-    loss = agent.optimize(last_value=last_value)
-    return total_reward, steps_used, loss
 
 
 def _evaluate_deterministic_policy(
@@ -467,48 +429,21 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
     )
     state_dim = len(valid_env.reset().to_vector())
 
-    if algorithm == "ppo":
-        agent = PPOAgent(
-            action_count=ACTION_COUNT,
-            state_dim=state_dim,
-            gamma=float(config.values.get("gamma", 0.99)),
-            gae_lambda=float(config.values.get("gae_lambda", 0.95)),
-            learning_rate=float(config.values.get("learning_rate", 3e-4)),
-            clip_epsilon=float(config.values.get("ppo_clip_epsilon", 0.2)),
-            update_epochs=int(config.values.get("ppo_update_epochs", 4)),
-            mini_batch_size=int(config.values.get("ppo_mini_batch_size", 128)),
-            value_coef=float(config.values.get("ppo_value_coef", 0.5)),
-            entropy_coef=float(config.values.get("ppo_entropy_coef", 0.01)),
-            max_grad_norm=float(config.values.get("ppo_max_grad_norm", 0.5)),
-            hidden_dim=int(config.values.get("ppo_hidden_dim", 128)),
-            device=device,
-        )
-    elif algorithm == "double_dqn":
-        agent = DoubleDQNAgent(
-            action_count=ACTION_COUNT,
-            state_dim=state_dim,
-            gamma=float(config.values.get("gamma", 0.99)),
-            epsilon=float(config.values.get("epsilon_start", 1.0)),
-            epsilon_end=float(config.values.get("epsilon_end", 0.05)),
-            epsilon_decay=float(config.values.get("epsilon_decay", 0.995)),
-            replay_capacity=int(config.values.get("replay_capacity", 5000)),
-            batch_size=int(config.values.get("batch_size", 64)),
-            learning_rate=float(config.values.get("learning_rate", 1e-3)),
-            device=device,
-        )
-    else:
-        agent = DQNAgent(
-            action_count=ACTION_COUNT,
-            state_dim=state_dim,
-            gamma=float(config.values.get("gamma", 0.99)),
-            epsilon=float(config.values.get("epsilon_start", 1.0)),
-            epsilon_end=float(config.values.get("epsilon_end", 0.05)),
-            epsilon_decay=float(config.values.get("epsilon_decay", 0.995)),
-            replay_capacity=int(config.values.get("replay_capacity", 5000)),
-            batch_size=int(config.values.get("batch_size", 64)),
-            learning_rate=float(config.values.get("learning_rate", 1e-3)),
-            device=device,
-        )
+    if algorithm != "dqn":
+        raise ValueError(f"Unsupported scheduler algorithm: {algorithm}")
+
+    agent = DQNAgent(
+        action_count=ACTION_COUNT,
+        state_dim=state_dim,
+        gamma=float(config.values.get("gamma", 0.99)),
+        epsilon=float(config.values.get("epsilon_start", 1.0)),
+        epsilon_end=float(config.values.get("epsilon_end", 0.05)),
+        epsilon_decay=float(config.values.get("epsilon_decay", 0.995)),
+        replay_capacity=int(config.values.get("replay_capacity", 5000)),
+        batch_size=int(config.values.get("batch_size", 64)),
+        learning_rate=float(config.values.get("learning_rate", 1e-3)),
+        device=device,
+    )
 
     print(f"[scheduler] config: {config.path}")
     print(f"[scheduler] algorithm: {algorithm}")
@@ -532,50 +467,27 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
             **env_kwargs,
         )
 
-        if algorithm == "ppo":
-            train_reward, steps_used, average_loss = _run_single_ppo_episode(
-                train_env,
-                agent,
-                max_steps=max_steps,
-            )
-            validation_summary = _evaluate_validation_summary(
-                valid_env,
-                validation_events,
-                lambda state: agent.select_action(
-                    state.to_vector(),
-                    deterministic=True,
-                    allowed_actions=state.allowed_actions(valid_env.starvation_threshold),
-                )[0],
-                max_steps=max_steps,
-                timely_match_window_steps=timely_match_window_steps,
-            )
-            validation_reward = validation_summary["validation_reward"]
-            best_candidate = {
-                key: value.detach().cpu().clone()
-                for key, value in agent.policy_value_network.state_dict().items()
-            }
-        else:
-            train_reward, steps_used, average_loss = _run_single_dqn_episode(
-                train_env,
-                agent,
-                max_steps=max_steps,
-                target_update_interval=target_update_interval,
-            )
-            original_epsilon = agent.epsilon
-            agent.epsilon = 0.0
-            validation_summary = _evaluate_validation_summary(
-                valid_env,
-                validation_events,
-                lambda state: agent.select_action(state.to_vector()),
-                max_steps=max_steps,
-                timely_match_window_steps=timely_match_window_steps,
-            )
-            validation_reward = validation_summary["validation_reward"]
-            agent.epsilon = original_epsilon
-            best_candidate = {
-                key: value.detach().cpu().clone()
-                for key, value in agent.policy_network.state_dict().items()
-            }
+        train_reward, steps_used, average_loss = _run_single_dqn_episode(
+            train_env,
+            agent,
+            max_steps=max_steps,
+            target_update_interval=target_update_interval,
+        )
+        original_epsilon = agent.epsilon
+        agent.epsilon = 0.0
+        validation_summary = _evaluate_validation_summary(
+            valid_env,
+            validation_events,
+            lambda state: agent.select_action(state.to_vector()),
+            max_steps=max_steps,
+            timely_match_window_steps=timely_match_window_steps,
+        )
+        validation_reward = validation_summary["validation_reward"]
+        agent.epsilon = original_epsilon
+        best_candidate = {
+            key: value.detach().cpu().clone()
+            for key, value in agent.policy_network.state_dict().items()
+        }
 
         history.append(
             {
@@ -624,51 +536,26 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
             best_validation_summary = dict(validation_summary)
             best_state = best_candidate
 
-        if algorithm in {"dqn", "double_dqn"}:
-            agent.decay_epsilon()
+        agent.decay_epsilon()
 
     if best_state is not None:
-        if algorithm == "ppo":
-            agent.policy_value_network.load_state_dict(best_state)
-        else:
-            agent.policy_network.load_state_dict(best_state)
-            agent.update_target_network()
+        agent.policy_network.load_state_dict(best_state)
+        agent.update_target_network()
 
-    if algorithm == "ppo":
-        model_filename = "ppo_agent.pt"
-    elif algorithm == "double_dqn":
-        model_filename = "double_dqn_agent.pt"
-    else:
-        model_filename = "dqn_agent.pt"
+    model_filename = "dqn_agent.pt"
     model_path = output_dir / model_filename
-    if algorithm == "ppo":
-        torch.save(
-            {
-                "model_state_dict": agent.policy_value_network.state_dict(),
-                "history": history,
-                "best_validation_reward": best_reward,
-            },
-            model_path,
-        )
-        action_selector = lambda state_vector: agent.select_action(
-            state_vector.to_vector(),
-            deterministic=True,
-            allowed_actions=state_vector.allowed_actions(starvation_threshold),
-        )[0]
-        trained_policy_name = "ppo"
-    else:
-        torch.save(
-            {
-                "model_state_dict": agent.policy_network.state_dict(),
-                "history": history,
-                "best_validation_reward": best_reward,
-            },
-            model_path,
-        )
-        original_epsilon = agent.epsilon
-        agent.epsilon = 0.0
-        action_selector = lambda state: agent.select_action(state.to_vector())
-        trained_policy_name = "double_dqn" if algorithm == "double_dqn" else "dqn"
+    torch.save(
+        {
+            "model_state_dict": agent.policy_network.state_dict(),
+            "history": history,
+            "best_validation_reward": best_reward,
+        },
+        model_path,
+    )
+    original_epsilon = agent.epsilon
+    agent.epsilon = 0.0
+    action_selector = lambda state: agent.select_action(state.to_vector())
+    trained_policy_name = "dqn"
 
     policy_comparison = export_policy_comparison(
         data_path=dataset_dir / "test.csv",
@@ -693,8 +580,7 @@ def run_scheduler_training(config_path: Path, run_name: str | None = None) -> Pa
         comparison_csv_path=output_dir / "policy_comparison.csv",
         output_path=output_dir / "policy_comparison.png",
     )
-    if algorithm in {"dqn", "double_dqn"}:
-        agent.epsilon = original_epsilon
+    agent.epsilon = original_epsilon
 
     report_path = output_dir / "scheduler_report.json"
     report_path.write_text(

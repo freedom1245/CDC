@@ -515,15 +515,24 @@ def run_classifier_ablations(config_path: Path, run_name: str | None = None) -> 
     return output_dir
 
 
-def run_classifier_training(config_path: Path, run_name: str | None = None) -> Path:
+def run_classifier_training(
+    config_path: Path,
+    run_name: str | None = None,
+    model_override: str | None = None,
+) -> Path:
     settings = default_settings()
     config = load_yaml_config(config_path)
-    source = config.values.get("source", "configured_dataset")
+    config_values = dict(config.values)
+    if model_override:
+        config_values["model_variant"] = model_override
+    source = config_values.get("source", "configured_dataset")
 
     print(f"[classifier] config: {config.path}")
+    if model_override:
+        print(f"[classifier] model override: {model_override}")
     if source == "configured_dataset":
         return _run_configured_dataset_training(
-            config.values,
+            config_values,
             settings.project_root,
             run_name_override=run_name,
         )

@@ -1,4 +1,4 @@
-data_path: data/industry/dm_alarm_events.csv
+data_path: data/industry/industry_alarm_events.csv
 target: priority_label
 
 categorical_columns:

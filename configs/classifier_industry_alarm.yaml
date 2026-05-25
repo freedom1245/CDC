@@ -1,6 +1,6 @@
-﻿source: configured_dataset
-dataset_config: configs/dataset_industry_dm_alarm.yaml
-classifier_dataset_dir: data/processed_industry_dm_alarm
+source: configured_dataset
+dataset_config: configs/dataset_industry_alarm.yaml
+classifier_dataset_dir: data/processed_industry_alarm
 model_variant: embedding_mlp
 batch_size: 512
 epochs: 20
@@ -15,6 +15,5 @@ attention_heads: 8
 attention_layers: 3
 patience: 4
 num_workers: 0
-random_state: 7
+random_state: 42
 output_dir: outputs/classifier
-

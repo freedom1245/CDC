@@ -1,6 +1,6 @@
 import pandas as pd
 
-from export_dm_industry_dataset import transform_alarm_frame
+from export_industry_dataset import transform_alarm_frame
 
 
 def test_transform_alarm_frame_builds_project_schema() -> None:
@@ -49,7 +49,7 @@ def test_transform_alarm_frame_builds_project_schema() -> None:
                 "IS_FALS": None,
                 "IS_REST": None,
                 "REST_TIME": None,
-                "ALARM_NAME": "终端掉电",
+                "ALARM_NAME": "终�??掉电",
                 "ALARM_LEVEL_CODE": "1",
                 "ALARM_TYPE_CODE": "8",
                 "ALARM_SOUR_CODE": "2",
@@ -123,7 +123,7 @@ def test_transform_alarm_frame_respects_burst_window_seconds() -> None:
                 "IS_FALS": None,
                 "IS_REST": None,
                 "REST_TIME": None,
-                "ALARM_NAME": "A相CT二次侧开路",
+                "ALARM_NAME": "A相CT二�?�侧开�?",
                 "ALARM_LEVEL_CODE": "1",
                 "ALARM_TYPE_CODE": "12",
                 "ALARM_SOUR_CODE": "1",
@@ -154,7 +154,7 @@ def test_transform_alarm_frame_respects_burst_window_seconds() -> None:
                 "IS_FALS": None,
                 "IS_REST": None,
                 "REST_TIME": None,
-                "ALARM_NAME": "A相CT二次侧开路",
+                "ALARM_NAME": "A相CT二�?�侧开�?",
                 "ALARM_LEVEL_CODE": "1",
                 "ALARM_TYPE_CODE": "12",
                 "ALARM_SOUR_CODE": "1",
